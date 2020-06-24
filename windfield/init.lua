@@ -30,7 +30,7 @@ World = {}
 World.__index = World 
 
 function wf.newWorld(xg, yg, sleep)
-    local world = wf.World.new(wf, xg, yg, sleep)
+    local world = wf.World:new(wf, xg, yg, sleep)
 
     world.box2d_world:setCallbacks(world.collisionOnEnter, world.collisionOnExit, world.collisionPre, world.collisionPost)
     world:collisionClear()
@@ -49,7 +49,7 @@ function wf.newWorld(xg, yg, sleep)
     return world
 end
 
-function World.new(wf, xg, yg, sleep)
+function World:new(wf, xg, yg, sleep)
     local self = {}
     local settings = settings or {}
     self.wf = wf
@@ -61,7 +61,6 @@ function World.new(wf, xg, yg, sleep)
     self.masks = {}
     self.is_sensor_memo = {}
     self.query_debug_draw = {}
-
     love.physics.setMeter(32)
     self.box2d_world = love.physics.newWorld(xg, yg, sleep) 
 
@@ -124,6 +123,7 @@ function World:draw(alpha)
         elseif query_draw.type == 'polygon' then
             local triangles = love.math.triangulate(query_draw.vertices)
             for _, triangle in ipairs(triangles) do love.graphics.polygon('line', triangle) end
+
         end
     end
     for i = #self.query_debug_draw, 1, -1 do
@@ -202,7 +202,7 @@ function World:collisionClear()
     self.collisions.post.sensor = {}
     self.collisions.post.non_sensor = {}
 end
-
+    
 function World:collisionEventsClear()
     local bodies = self.box2d_world:getBodies()
     for _, body in ipairs(bodies) do
@@ -570,9 +570,18 @@ function World:queryCircleArea(x, y, radius, collision_class_names)
     for _, collider in ipairs(colliders) do
         if self:collisionClassInCollisionClassesList(collider.collision_class, collision_class_names) then
             for _, fixture in ipairs(collider.body:getFixtures()) do
-                if self.wf.Math.polygon.getCircleIntersection(x, y, radius, {collider.body:getWorldPoints(fixture:getShape():getPoints())}) then
-                    table.insert(outs, collider)
-                    break
+                if fixture:getShape().getPoints then
+                  if self.wf.Math.polygon.getCircleIntersection(x, y, radius, {collider.body:getWorldPoints(fixture:getShape():getPoints())}) then
+                      table.insert(outs, collider)
+                      break
+                  end
+                else --if queried collider is a circle
+                  local cx, cy = collider.body:getWorldPoints(fixture:getShape():getPoint())
+                  local cr = fixture:getShape():getRadius()
+                  if self.wf.Math.circle.getCircleIntersection(x, y, radius, cx, cy, cr) then
+                      table.insert(outs, collider)
+                      break
+                    end
                 end
             end
         end
@@ -589,10 +598,17 @@ function World:queryRectangleArea(x, y, w, h, collision_class_names)
     for _, collider in ipairs(colliders) do
         if self:collisionClassInCollisionClassesList(collider.collision_class, collision_class_names) then
             for _, fixture in ipairs(collider.body:getFixtures()) do
+              if fixture:getShape().getPoints then
                 if self.wf.Math.polygon.isPolygonInside({x, y, x+w, y, x+w, y+h, x, y+h}, {collider.body:getWorldPoints(fixture:getShape():getPoints())}) then
                     table.insert(outs, collider)
                     break
                 end
+              else--if queried collider is a circle
+                  if self.wf.Math.polygon.isPolygonInside({x, y, x+w, y, x+w, y+h, x, y+h}, {collider.body:getWorldPoints(fixture:getShape():getPoint())}) then
+                      table.insert(outs, collider)
+                      break
+                    end
+              end  
             end
         end
     end
@@ -614,9 +630,16 @@ function World:queryPolygonArea(vertices, collision_class_names)
     for _, collider in ipairs(colliders) do
         if self:collisionClassInCollisionClassesList(collider.collision_class, collision_class_names) then
             for _, fixture in ipairs(collider.body:getFixtures()) do
-                if self.wf.Math.polygon.isPolygonInside(vertices, {collider.body:getWorldPoints(fixture:getShape():getPoints())}) then
+                if fixture:getShape().getPoints then
+                  if self.wf.Math.polygon.isPolygonInside(vertices, {collider.body:getWorldPoints(fixture:getShape():getPoints())}) then
                     table.insert(outs, collider)
                     break
+                  end
+                else--if queried collider is a circle
+                  if self.wf.Math.polygon.isPolygonInside(vertices, {collider.body:getWorldPoints(fixture:getShape():getPoint())}) then
+                    table.insert(outs, collider)
+                    break
+                  end
                 end
             end
         end
@@ -661,10 +684,10 @@ end
 function World:destroy()
     local bodies = self.box2d_world:getBodies()
     for _, body in ipairs(bodies) do
-        local collider = body:getFixtures()[1]:getUserData()
+        local collider = body:getFixtureList()[1]:getUserData()
         collider:destroy()
     end
-    local joints = self.box2d_world:getJoints()
+    local joints = self.box2d_world:getJointList()
     for _, joint in ipairs(joints) do joint:destroy() end
     self.box2d_world:destroy()
     self.box2d_world = nil
